@@ -3,9 +3,9 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::time::{Duration, SystemTime};
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Utc,Local};
 use dirs::home_dir;
-use tokio::time::interval;
+use tokio_cron_scheduler::{Job, JobScheduler};
 
 // 检查单个域名的证书
 async fn check_domain_certificate(domain: &str) -> Result<SystemTime, Box<dyn Error>> {
@@ -81,13 +81,14 @@ async fn check_domain_certificate(domain: &str) -> Result<SystemTime, Box<dyn Er
     }
 }
 
-// 证书检查任务
 async fn check_certificates() -> Result<(), Box<dyn Error>> {
     println!("=== Certificate Check Task Started at {}" , DateTime::<Utc>::from(SystemTime::now()).format("%Y-%m-%d %H:%M:%S UTC"));
     
-    // 读取域名列表
     let home_dir = home_dir().ok_or("Could not get home directory")?;
-    let project_dir = home_dir.join("wiic-rssl");
+    // let project_dir = home_dir.join("wiic-rssl");
+    let project_name = env!("CARGO_PKG_NAME");
+    let project_dir = home_dir.join(project_name);
+
     let domains_path = project_dir.join("domains.txt");
     
     println!("Reading domains from: {:?}", domains_path);
@@ -133,17 +134,40 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // 立即执行一次任务
     check_certificates().await?;
     
-    // 创建一个每天执行一次的定时器（86400秒 = 1天）
-    let mut interval = interval(Duration::from_secs(86400));
+    // 创建调度器
+    let mut scheduler = JobScheduler::new().await?;
     
-    println!("\n=== Scheduler Started, will run daily ===");
+    // 添加一个每分钟执行的任务，用于测试
+    let test_job = Job::new_async("0 * * * * *", |_uuid, _l| {
+        Box::pin(async move {
+            println!("\n--- Running test task at {}" , DateTime::<Utc>::from(SystemTime::now()).format("%Y-%m-%d %H:%M:%S UTC"));
+        })
+    })?;
+    scheduler.add(test_job).await?;
     
-    // 循环执行任务
-    loop {
-        interval.tick().await;
-        println!("\n--- Running scheduled certificate check ---");
-        if let Err(e) = check_certificates().await {
-            println!("Error running certificate check: {}", e);
-        }
-    }
+    // 创建每天9点10分执行的任务（cron表达式：秒 分 时 日 月 星期）
+    let job = Job::new_async("0 50 9 * * *", |_uuid, _l| {
+        Box::pin(async move {
+            println!("\n--- Running scheduled certificate check at {}" , DateTime::<Utc>::from(SystemTime::now()).format("%Y-%m-%d %H:%M:%S UTC"));
+            if let Err(e) = check_certificates().await {
+                println!("Error running certificate check: {}", e);
+            }
+        })
+    })?;
+    
+    // 添加任务到调度器
+    scheduler.add(job).await?;
+    
+    // 启动调度器
+    println!("\n=== Scheduler Started, will run daily at 09:10 ===");
+    println!("Test task will run every minute to verify scheduler is working");
+    scheduler.start().await?;
+    
+    // 等待信号以保持程序运行
+    tokio::signal::ctrl_c().await?;
+    
+    // 关闭调度器
+    scheduler.shutdown().await?;
+    
+    Ok(())
 }
