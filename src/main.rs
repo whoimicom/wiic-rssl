@@ -1,11 +1,10 @@
 use std::error::Error;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::net::TcpStream;
 use std::time::{Duration, SystemTime};
 
 use chrono::{DateTime, Utc};
-use native_tls::TlsConnector;
+use dirs::home_dir;
 use tokio::time::interval;
 
 // 检查单个域名的证书
@@ -87,7 +86,13 @@ async fn check_certificates() -> Result<(), Box<dyn Error>> {
     println!("=== Certificate Check Task Started at {}" , DateTime::<Utc>::from(SystemTime::now()).format("%Y-%m-%d %H:%M:%S UTC"));
     
     // 读取域名列表
-    let file = File::open("src/domains.txt")?;
+    let home_dir = home_dir().ok_or("Could not get home directory")?;
+    let project_dir = home_dir.join("wiic-rssl");
+    let domains_path = project_dir.join("domains.txt");
+    
+    println!("Reading domains from: {:?}", domains_path);
+    
+    let file = File::open(domains_path)?;
     let reader = BufReader::new(file);
     
     for line in reader.lines() {
