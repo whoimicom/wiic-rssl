@@ -3,7 +3,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::time::{Duration, SystemTime};
 
-use chrono::{DateTime, Utc,Local};
+use chrono::{DateTime, Local, Utc};
 use dirs::home_dir;
 use tokio_cron_scheduler::{Job, JobScheduler};
 
@@ -82,8 +82,10 @@ async fn check_domain_certificate(domain: &str) -> Result<SystemTime, Box<dyn Er
 }
 
 async fn check_certificates() -> Result<(), Box<dyn Error>> {
+    // 使用本地时间打印
+    println!("=== Certificate Check Task Started at {}" , Local::now().format("%Y-%m-%d %H:%M:%S %Z"));
     println!("=== Certificate Check Task Started at {}" , DateTime::<Utc>::from(SystemTime::now()).format("%Y-%m-%d %H:%M:%S UTC"));
-    
+
     let home_dir = home_dir().ok_or("Could not get home directory")?;
     // let project_dir = home_dir.join("wiic-rssl");
     let project_name = env!("CARGO_PKG_NAME");
@@ -109,8 +111,9 @@ async fn check_certificates() -> Result<(), Box<dyn Error>> {
                 let now = SystemTime::now();
                 let days_until_expiry = expiry_date.duration_since(now)?.as_secs() / (60 * 60 * 24);
                 
-                let expiry_date_utc: DateTime<Utc> = expiry_date.into();
-                println!("  Expiry date: {}", expiry_date_utc.format("%Y-%m-%d %H:%M:%S UTC"));
+                // 使用本地时间打印
+                let expiry_date_local = DateTime::<Local>::from(expiry_date);
+                println!("  Expiry date: {}", expiry_date_local.format("%Y-%m-%d %H:%M:%S %Z"));
                 println!("  Days until expiry: {}", days_until_expiry);
                 
                 if days_until_expiry < 30 {
@@ -125,7 +128,10 @@ async fn check_certificates() -> Result<(), Box<dyn Error>> {
         }
     }
     
-    println!("\n=== Certificate Check Task Completed ===");
+    // 使用本地时间打印
+    println!("=== Certificate Check Task Completed at {} ===" , Local::now().format("%Y-%m-%d %H:%M:%S %Z"));
+    println!("=== Certificate Check Task Started at {}" , DateTime::<Utc>::from(SystemTime::now()).format("%Y-%m-%d %H:%M:%S UTC"));
+
     Ok(())
 }
 
@@ -140,15 +146,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // 添加一个每分钟执行的任务，用于测试
     let test_job = Job::new_async("0 * * * * *", |_uuid, _l| {
         Box::pin(async move {
-            println!("\n--- Running test task at {}" , DateTime::<Utc>::from(SystemTime::now()).format("%Y-%m-%d %H:%M:%S UTC"));
+            // 使用本地时间打印
+            println!("\n--- Running test task at {}" , Local::now().format("%Y-%m-%d %H:%M:%S %Z"));
         })
     })?;
     scheduler.add(test_job).await?;
     
     // 创建每天9点10分执行的任务（cron表达式：秒 分 时 日 月 星期）
-    let job = Job::new_async("0 50 9 * * *", |_uuid, _l| {
+    let job = Job::new_async("0 10 9 * * *", |_uuid, _l| {
         Box::pin(async move {
-            println!("\n--- Running scheduled certificate check at {}" , DateTime::<Utc>::from(SystemTime::now()).format("%Y-%m-%d %H:%M:%S UTC"));
+            // 使用本地时间打印
+            println!("\n--- Running scheduled certificate check at {}" , Local::now().format("%Y-%m-%d %H:%M:%S %Z"));
             if let Err(e) = check_certificates().await {
                 println!("Error running certificate check: {}", e);
             }
