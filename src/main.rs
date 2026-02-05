@@ -5,10 +5,39 @@ use std::time::{Duration, SystemTime};
 
 use chrono::{DateTime, Local, Utc};
 use dirs::home_dir;
+
 use tokio_cron_scheduler::{Job, JobScheduler};
 
+// 发送企业微信webhook消息
+async fn send_wechat_webhook(domain: &str, days: u64) -> Result<(), Box<dyn Error + Send + Sync>> {
+    // 企业微信webhook URL，需要替换为实际的webhook URL
+    let webhook_url = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_WEBHOOK_KEY";
+    
+    // 构建消息内容
+    let content = format!("域名 {} 证书有效期剩余 {} 天，请及时更新！", domain, days);
+    let message = serde_json::Value::Object(serde_json::Map::from_iter(vec![
+        ("msgtype".to_string(), serde_json::Value::String("text".to_string())),
+        ("text".to_string(), serde_json::Value::Object(serde_json::Map::from_iter(vec![
+            ("content".to_string(), serde_json::Value::String(content)),
+        ]))),
+    ]));
+    
+    // 发送HTTP请求
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()?;
+    
+    let response = client.post(webhook_url)
+        .json(&message)
+        .send()
+        .await?;
+    
+    println!("Webhook response status: {}", response.status());
+    Ok(())
+}
+
 // 检查单个域名的证书
-async fn check_domain_certificate(domain: &str) -> Result<SystemTime, Box<dyn Error>> {
+async fn check_domain_certificate(domain: &str) -> Result<SystemTime, Box<dyn Error + Send + Sync>> {
     // 这里我们使用系统命令来获取证书信息，确保跨平台兼容性
     #[cfg(target_os = "windows")]
     let output = std::process::Command::new("powershell.exe")
@@ -81,7 +110,7 @@ async fn check_domain_certificate(domain: &str) -> Result<SystemTime, Box<dyn Er
     }
 }
 
-async fn check_certificates() -> Result<(), Box<dyn Error>> {
+async fn check_certificates() -> Result<(), Box<dyn Error + Send + Sync>> {
     // 使用本地时间打印
     println!("=== Certificate Check Task Started at {}" , Local::now().format("%Y-%m-%d %H:%M:%S %Z"));
     println!("=== Certificate Check Task Started at {}" , DateTime::<Utc>::from(SystemTime::now()).format("%Y-%m-%d %H:%M:%S UTC"));
@@ -116,8 +145,14 @@ async fn check_certificates() -> Result<(), Box<dyn Error>> {
                 println!("  Expiry date: {}", expiry_date_local.format("%Y-%m-%d %H:%M:%S %Z"));
                 println!("  Days until expiry: {}", days_until_expiry);
                 
-                if days_until_expiry < 30 {
-                    println!("  Status: ERROR - Certificate expires in less than 30 days!");
+                if days_until_expiry < 10 {
+                    println!("  Status: ERROR - Certificate expires in less than 10 days!");
+                    // 发送企业微信webhook通知
+                    if let Err(e) = send_wechat_webhook(&domain, days_until_expiry).await {
+                        println!("  Failed to send webhook: {}", e);
+                    }
+                } else if days_until_expiry < 30 {
+                    println!("  Status: WARNING - Certificate expires in less than 30 days!");
                 } else {
                     println!("  Status: OK");
                 }
@@ -136,7 +171,7 @@ async fn check_certificates() -> Result<(), Box<dyn Error>> {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     // 立即执行一次任务
     check_certificates().await?;
     

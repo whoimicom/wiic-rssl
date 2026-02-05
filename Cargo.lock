@@ -1519,6 +1519,7 @@ dependencies = [
  "dirs",
  "native-tls",
  "reqwest",
+ "serde_json",
  "tokio",
  "tokio-cron-scheduler",
 ]
